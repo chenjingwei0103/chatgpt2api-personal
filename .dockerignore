@@ -10,5 +10,5 @@ __pycache__
 web/.next
 web/node_modules
 
-assets
+assets/atlascloud.svg
 README.md
