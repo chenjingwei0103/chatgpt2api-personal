@@ -23,6 +23,8 @@ _ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets" / "sentinel"
 _SDK_PATCH_MARKER = "t.token=ye,t}({});"
 _SDK_PATCH_REPLACEMENT = "t.token=ye,t.__solve_dx=_n,t.__reg=D,t}({});"
 _CTX_CACHE_LIMIT = 4
+_JS_INIT_TIMEOUT_MS = 2_000
+_JS_SOLVE_TIMEOUT_MS = 5_000
 
 _cache: Dict[str, MiniRacer] = {}
 _lock = threading.Lock()
@@ -41,12 +43,15 @@ def _build_ctx(fingerprint: Dict[str, Any] | None) -> MiniRacer:
     ctx.eval(
         "globalThis.setTimeout=globalThis.setTimeout||function(f,m){return 0};"
         "globalThis.clearTimeout=globalThis.clearTimeout||function(){};",
-        timeout=30,
+        timeout=_JS_INIT_TIMEOUT_MS,
     )
     if fingerprint:
-        ctx.eval("globalThis.__SHIM_FP = %s;" % json.dumps(fingerprint, ensure_ascii=False), timeout=30)
-    ctx.eval(_read_asset("shims.js"), timeout=30)
-    ctx.eval(patched, timeout=30)
+        ctx.eval(
+            "globalThis.__SHIM_FP = %s;" % json.dumps(fingerprint, ensure_ascii=False),
+            timeout=_JS_INIT_TIMEOUT_MS,
+        )
+    ctx.eval(_read_asset("shims.js"), timeout=_JS_INIT_TIMEOUT_MS)
+    ctx.eval(patched, timeout=_JS_INIT_TIMEOUT_MS)
     return ctx
 
 
@@ -66,17 +71,17 @@ def _get_ctx(fingerprint: Dict[str, Any] | None) -> MiniRacer:
 
 
 def _solve(ctx: MiniRacer, dx: str, p_token: str) -> str:
-    ctx.eval("globalThis.__req = {};", timeout=30)
-    ctx.eval("SentinelSDK.__reg(__req, %s);" % json.dumps(p_token), timeout=30)
-    ctx.eval("globalThis.__token = undefined; globalThis.__err = undefined;", timeout=30)
+    ctx.eval("globalThis.__req = {};", timeout=_JS_SOLVE_TIMEOUT_MS)
+    ctx.eval("SentinelSDK.__reg(__req, %s);" % json.dumps(p_token), timeout=_JS_SOLVE_TIMEOUT_MS)
+    ctx.eval("globalThis.__token = undefined; globalThis.__err = undefined;", timeout=_JS_SOLVE_TIMEOUT_MS)
     ctx.eval(
         "SentinelSDK.__solve_dx(__req, %s)"
         ".then(function(v){globalThis.__token=v},function(e){globalThis.__err=String(e&&e.stack||e)});"
         % json.dumps(dx),
-        timeout=30,
+        timeout=_JS_SOLVE_TIMEOUT_MS,
     )
-    token = ctx.eval("globalThis.__token", timeout=30)
-    error = ctx.eval("globalThis.__err", timeout=30)
+    token = ctx.eval("globalThis.__token", timeout=_JS_SOLVE_TIMEOUT_MS)
+    error = ctx.eval("globalThis.__err", timeout=_JS_SOLVE_TIMEOUT_MS)
     if error is not JSUndefined and error is not None:
         raise RuntimeError(f"sentinel solve failed: {error}")
     if token is JSUndefined or token is None:
